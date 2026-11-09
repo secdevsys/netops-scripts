@@ -1,0 +1,51 @@
+#
+ version 7.1.070, Release 6635P07
+#
+ sysname ACC-05
+#
+ lldp global enable
+#
+ stp global enable
+#
+vlan 1
+#
+vlan 510
+ name USERS-510
+#
+vlan 995
+ name MGMT-ACC05
+#
+interface NULL0
+#
+interface Vlan-interface510
+ description GW_USERS-510
+ ip address 10.51.0.1 255.255.255.0
+#
+interface Vlan-interface995
+ description MGMT
+ ip address 10.0.95.1 255.255.255.0
+#
+interface GigabitEthernet1/0/1
+ port link-mode bridge
+ description POSTE_UTILISATEUR
+ port access vlan 510
+#
+interface GigabitEthernet1/0/2
+ port link-mode bridge
+ description POSTE_UTILISATEUR
+ port access vlan 510
+#
+interface GigabitEthernet1/0/48
+ port link-mode route
+ description UPLINK_DIST-03_GE1/0/24
+ ip address 172.16.1.2 255.255.255.252
+#
+ospf 1 router-id 10.0.95.1
+ area 0.0.0.0
+  network 172.16.1.0 0.0.0.3
+  network 10.51.0.0 0.0.0.255
+  network 10.0.95.0 0.0.0.255
+#
+ ssh server enable
+#
+return

@@ -1,0 +1,40 @@
+#
+ version 7.1.070, Release 6635P07
+#
+ sysname ACC-04
+#
+ lldp global enable
+#
+ stp global enable
+#
+vlan 1
+#
+vlan 210
+ name USERS-210
+#
+vlan 992
+ name MGMT-CORE
+#
+interface NULL0
+#
+interface Vlan-interface992
+ description MGMT
+ ip address 10.0.92.14 255.255.255.0
+#
+interface GigabitEthernet1/0/1
+ port link-mode bridge
+ description POSTE_UTILISATEUR
+ port access vlan 210
+#
+interface Ten-GigabitEthernet1/0/49
+ port link-mode bridge
+ description UPLINK_DIST-02_XGE1/0/3
+ port link-type trunk
+ undo port trunk permit vlan 1
+ port trunk permit vlan 210 992
+#
+ ip route-static 0.0.0.0 0 10.0.92.1
+#
+ ssh server enable
+#
+return

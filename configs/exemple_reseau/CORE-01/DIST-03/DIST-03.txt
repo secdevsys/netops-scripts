@@ -1,0 +1,58 @@
+#
+ version 7.1.070, Release 6635P07
+#
+ sysname DIST-03
+#
+ lldp global enable
+#
+ stp global enable
+#
+vlan 1
+#
+vlan 310
+ name USERS-310
+#
+vlan 993
+ name MGMT-DIST03
+#
+interface NULL0
+#
+interface Vlan-interface310
+ description GW_USERS-310
+ ip address 10.31.0.1 255.255.255.0
+#
+interface Vlan-interface993
+ description MGMT
+ ip address 10.0.93.1 255.255.255.0
+#
+interface GigabitEthernet1/0/1
+ port link-mode bridge
+ description SALLE_REUNION
+ port access vlan 310
+#
+interface GigabitEthernet1/0/24
+ port link-mode route
+ description DOWNLINK_ACC-05_GE1/0/48
+ ip address 172.16.1.1 255.255.255.252
+#
+interface Ten-GigabitEthernet1/0/49
+ port link-mode route
+ description UPLINK_CORE-01_XGE1/0/3
+ ip address 172.16.0.6 255.255.255.252
+#
+interface Ten-GigabitEthernet1/0/51
+ port link-mode route
+ description EW_DIST-01_XGE1/0/51
+ ip address 172.16.0.102 255.255.255.252
+#
+ospf 1 router-id 10.0.93.1
+ area 0.0.0.0
+  network 172.16.0.4 0.0.0.3
+  network 172.16.0.100 0.0.0.3
+  network 172.16.1.0 0.0.0.3
+  network 10.31.0.0 0.0.0.255
+  network 10.0.93.0 0.0.0.255
+#
+ ssh server enable
+#
+return

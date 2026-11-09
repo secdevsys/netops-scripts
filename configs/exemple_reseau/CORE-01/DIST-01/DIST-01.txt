@@ -1,0 +1,101 @@
+#
+ version 7.1.070, Release 6635P07
+#
+ sysname DIST-01
+#
+ irf mac-address persistent timer
+ irf auto-update enable
+ undo irf link-delay
+ irf member 1 priority 32
+ irf member 2 priority 1
+#
+ lldp global enable
+#
+ stp global enable
+#
+vlan 1
+#
+vlan 110
+ name USERS-110
+#
+vlan 120
+ name USERS-120
+#
+vlan 991
+ name MGMT-DIST01
+#
+interface Bridge-Aggregation11
+ description DOWNLINK_ACC-01_BAGG1
+ port link-type trunk
+ undo port trunk permit vlan 1
+ port trunk permit vlan 110 120 991
+ link-aggregation mode dynamic
+#
+interface Route-Aggregation1
+ description UPLINK_CORE-01_RAGG1
+ ip address 172.16.0.2 255.255.255.252
+ link-aggregation mode dynamic
+#
+interface NULL0
+#
+interface Vlan-interface110
+ description GW_USERS-110
+ ip address 10.11.0.1 255.255.255.0
+#
+interface Vlan-interface120
+ description GW_USERS-120
+ ip address 10.12.0.1 255.255.255.0
+#
+interface Vlan-interface991
+ description MGMT
+ ip address 10.0.91.1 255.255.255.0
+#
+interface Ten-GigabitEthernet1/0/1
+ port link-mode bridge
+ description DOWNLINK_ACC-01_XGE1/0/49
+ port link-type trunk
+ undo port trunk permit vlan 1
+ port trunk permit vlan 110 120 991
+ port link-aggregation group 11
+#
+interface Ten-GigabitEthernet1/0/2
+ port link-mode bridge
+ description DOWNLINK_ACC-02_XGE1/0/49
+ port link-type trunk
+ undo port trunk permit vlan 1
+ port trunk permit vlan 110 120 991
+#
+interface Ten-GigabitEthernet1/0/49
+ port link-mode route
+ description UPLINK_CORE-01_XGE1/0/1
+ port link-aggregation group 1
+#
+interface Ten-GigabitEthernet1/0/50
+ port link-mode route
+ description UPLINK_CORE-01_XGE2/0/1
+ port link-aggregation group 1
+#
+interface Ten-GigabitEthernet1/0/51
+ port link-mode route
+ description EW_DIST-03_XGE1/0/51
+ ip address 172.16.0.101 255.255.255.252
+#
+interface Ten-GigabitEthernet2/0/1
+ port link-mode bridge
+ description DOWNLINK_ACC-01_XGE1/0/50
+ port link-type trunk
+ undo port trunk permit vlan 1
+ port trunk permit vlan 110 120 991
+ port link-aggregation group 11
+#
+ospf 1 router-id 10.0.91.1
+ area 0.0.0.0
+  network 172.16.0.0 0.0.0.3
+  network 172.16.0.100 0.0.0.3
+  network 10.11.0.0 0.0.0.255
+  network 10.12.0.0 0.0.0.255
+  network 10.0.91.0 0.0.0.255
+#
+ ssh server enable
+#
+return

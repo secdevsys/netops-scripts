@@ -1,0 +1,94 @@
+#
+ version 7.1.070, Release 6635P07
+#
+ sysname CORE-01
+#
+ irf mac-address persistent timer
+ irf auto-update enable
+ undo irf link-delay
+ irf member 1 priority 32
+ irf member 2 priority 1
+#
+ lldp global enable
+#
+ stp global enable
+#
+vlan 1
+#
+vlan 210
+ name USERS-210
+#
+vlan 220
+ name USERS-220
+#
+vlan 992
+ name MGMT-CORE
+#
+interface Bridge-Aggregation10
+ description DOWNLINK_DIST-02_BAGG1
+ port link-type trunk
+ undo port trunk permit vlan 1
+ port trunk permit vlan 210 220 992
+ link-aggregation mode dynamic
+#
+interface Route-Aggregation1
+ description DOWNLINK_DIST-01_RAGG1
+ ip address 172.16.0.1 255.255.255.252
+ link-aggregation mode dynamic
+#
+interface NULL0
+#
+interface Vlan-interface210
+ description GW_USERS-210
+ ip address 10.21.0.1 255.255.255.0
+#
+interface Vlan-interface220
+ description GW_USERS-220
+ ip address 10.22.0.1 255.255.255.0
+#
+interface Vlan-interface992
+ description MGMT
+ ip address 10.0.92.1 255.255.255.0
+#
+interface Ten-GigabitEthernet1/0/1
+ port link-mode route
+ description DOWNLINK_DIST-01_XGE1/0/49
+ port link-aggregation group 1
+#
+interface Ten-GigabitEthernet1/0/2
+ port link-mode bridge
+ description DOWNLINK_DIST-02_XGE1/0/49
+ port link-type trunk
+ undo port trunk permit vlan 1
+ port trunk permit vlan 210 220 992
+ port link-aggregation group 10
+#
+interface Ten-GigabitEthernet1/0/3
+ port link-mode route
+ description DOWNLINK_DIST-03_XGE1/0/49
+ ip address 172.16.0.5 255.255.255.252
+#
+interface Ten-GigabitEthernet2/0/1
+ port link-mode route
+ description DOWNLINK_DIST-01_XGE1/0/50
+ port link-aggregation group 1
+#
+interface Ten-GigabitEthernet2/0/2
+ port link-mode bridge
+ description DOWNLINK_DIST-02_XGE1/0/50
+ port link-type trunk
+ undo port trunk permit vlan 1
+ port trunk permit vlan 210 220 992
+ port link-aggregation group 10
+#
+ospf 1 router-id 10.0.92.1
+ area 0.0.0.0
+  network 172.16.0.0 0.0.0.3
+  network 172.16.0.4 0.0.0.3
+  network 10.21.0.0 0.0.0.255
+  network 10.22.0.0 0.0.0.255
+  network 10.0.92.0 0.0.0.255
+#
+ ssh server enable
+#
+return
