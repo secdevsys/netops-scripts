@@ -1,0 +1,126 @@
+<DIST-01>display current-configuration
+#
+ version 7.1.070, Release 6710P01
+#
+ sysname DIST-01
+#
+ irf mac-address persistent timer
+#
+ router id 10.255.0.2
+#
+ lldp global enable
+#
+vlan 1
+#
+vlan 999
+ name MGMT
+#
+vlan 110
+ name USERS
+#
+vlan 120
+ name VOIP
+#
+vlan 130
+ name IMPRIMANTES
+#
+interface Bridge-Aggregation11
+ description DOWNLINK vers ACC-01 BAGG1
+ port link-type trunk
+ undo port trunk permit vlan 1
+ port trunk permit vlan 110 120 130 999
+ link-aggregation mode dynamic
+#
+interface Bridge-Aggregation12
+ description DOWNLINK vers ACC-02 BAGG1
+ port link-type trunk
+ undo port trunk permit vlan 1
+ port trunk permit vlan 110 120 130 999
+ link-aggregation mode dynamic
+#
+interface NULL0
+#
+interface LoopBack0
+ description Router-ID
+ ip address 10.255.0.2 255.255.255.255
+ ospf 1 area 0.0.0.0
+#
+interface Vlan-interface110
+ description Passerelle USERS
+ ip address 10.0.1.2 255.255.255.0
+ dhcp select relay
+ dhcp relay server-address 10.100.0.10
+ dhcp relay server-address 10.100.0.11
+ vrrp vrid 110 virtual-ip 10.0.1.1
+ vrrp vrid 110 priority 110
+ ospf 1 area 0.0.0.0
+#
+interface Vlan-interface120
+ description Passerelle VOIP
+ ip address 10.0.2.2 255.255.255.0
+ dhcp select relay
+ dhcp relay server-address 10.100.0.10
+ dhcp relay server-address 10.100.0.11
+ ip mtu 1400
+ vrrp vrid 120 virtual-ip 10.0.2.1
+ vrrp vrid 120 priority 110
+ ospf 1 area 0.0.0.0
+#
+interface Vlan-interface130
+ description Passerelle IMPRIMANTES
+ ip address 10.0.3.2 255.255.255.0
+ vrrp vrid 130 virtual-ip 10.0.3.1
+ vrrp vrid 130 priority 120
+ ospf 1 area 0.0.0.0
+#
+interface M-GigabitEthernet0/0/0
+ ip address 192.168.0.3 255.255.0.0
+#
+interface Ten-GigabitEthernet1/0/1
+ port link-mode bridge
+ description DOWNLINK vers ACC-01 HundredGigE1/0/53
+ port link-type trunk
+ undo port trunk permit vlan 1
+ port trunk permit vlan 110 120 130 999
+ port link-aggregation group 11
+#
+interface Ten-GigabitEthernet1/0/2
+ port link-mode bridge
+ description DOWNLINK vers ACC-01 HundredGigE1/0/54
+ port link-type trunk
+ undo port trunk permit vlan 1
+ port trunk permit vlan 110 120 130 999
+ port link-aggregation group 11
+#
+interface Ten-GigabitEthernet1/0/3
+ port link-mode bridge
+ description DOWNLINK vers ACC-02 HundredGigE1/0/53
+ port link-type trunk
+ undo port trunk permit vlan 1
+ port trunk permit vlan 110 120 130 999
+ port link-aggregation group 12
+#
+interface Ten-GigabitEthernet1/0/4
+ port link-mode bridge
+ description DOWNLINK vers ACC-02 HundredGigE1/0/54
+ port link-type trunk
+ undo port trunk permit vlan 1
+ port trunk permit vlan 110 120 130 999
+ port link-aggregation group 12
+#
+interface HundredGigE1/0/53
+ port link-mode route
+ description UPLINK vers CORE-01 Ten-GigabitEthernet1/0/1
+ ip address 10.254.0.2 255.255.255.252
+ ospf 1 area 0.0.0.0
+ ospf network-type p2p
+#
+ospf 1 router-id 10.255.0.2
+ silent-interface all
+ undo silent-interface HundredGigE1/0/53
+ area 0.0.0.0
+  network 10.255.0.2 0.0.0.0
+#
+ ip route-static 0.0.0.0 0 192.168.0.1 description Defaut management
+#
+return

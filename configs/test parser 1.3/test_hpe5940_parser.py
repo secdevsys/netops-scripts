@@ -1,0 +1,325 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Tests de hpe5940_parser.py
+
+Lancer (Windows) :  py -m unittest test_hpe5940_parser -v
+Lancer (Linux)   :  python3 -m unittest test_hpe5940_parser -v
+
+Les tests utilisent sample_hpe5940.cfg s'il est présent dans le même dossier,
+et génèrent leurs propres configs de test dans un dossier temporaire.
+"""
+
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+from openpyxl import load_workbook
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import hpe5940_parser as P  # noqa: E402
+
+if getattr(P, "__version__", "0") < "1.3.0":
+    sys.exit(f"ERREUR : {P.__file__} est une ancienne version du script "
+             f"({getattr(P, '__version__', 'sans numéro')}). Remplacez-le par la version 1.3.0 ou plus.")
+
+SAMPLE = HERE / "sample_hpe5940.cfg"
+
+
+def rows(xlsx, sheet):
+    """Retourne les lignes d'un onglet sous forme de dicts {en-tête: valeur}."""
+    ws = load_workbook(xlsx)[sheet]
+    data = list(ws.iter_rows(values_only=True))
+    head = data[0]
+    return [dict(zip(head, r)) for r in data[1:]]
+
+
+def by_name(lst, name, key="Interface"):
+    return next(r for r in lst if r[key] == name)
+
+
+def all_cells(xlsx):
+    wb = load_workbook(xlsx)
+    for ws in wb:
+        for row in ws.iter_rows():
+            for c in row:
+                yield ws.title, c
+
+
+class TmpDirTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="hpe5940_test_"))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def write_cfg(self, name, text, encoding="utf-8"):
+        p = self.tmp / name
+        p.write_bytes(text.encode(encoding) if isinstance(text, str) else text)
+        return p
+
+    def run_cli(self, *args):
+        return subprocess.run([sys.executable, str(HERE / "hpe5940_parser.py"), *map(str, args)],
+                              capture_output=True, text=True, encoding="utf-8", errors="replace")
+
+
+# --------------------------------------------------------------------------
+# Fonctions utilitaires
+# --------------------------------------------------------------------------
+class TestHelpers(unittest.TestCase):
+    def test_vlan_tokens(self):
+        self.assertEqual(P.parse_vlan_tokens("10 20 30 to 33".split()), {10, 20, 30, 31, 32, 33})
+        self.assertEqual(len(P.parse_vlan_tokens(["all"])), 4094)
+
+    def test_fmt_vlans(self):
+        self.assertEqual(P.fmt_vlans({1, 2, 3, 10, 12, 13}), "1-3,10,12-13")
+        self.assertEqual(P.fmt_vlans(set()), "")
+        self.assertEqual(P.fmt_vlans(set(range(1, 4095))), "all (1-4094)")
+
+    def test_ip_info(self):
+        self.assertEqual(P.ip_info("10.20.0.1", "24"),
+                         ("10.20.0.1", "255.255.255.0", "/24", "10.20.0.0/24"))
+        self.assertEqual(P.ip_info("10.1.1.1", "255.255.255.252")[3], "10.1.1.0/30")
+
+    def test_wildcard(self):
+        self.assertEqual(P.wildcard_to_prefix("172.16.0.0", "0.0.0.7"), "172.16.0.0/29")
+        self.assertEqual(P.wildcard_to_prefix("10.255.0.1", "0.0.0.0"), "10.255.0.1/32")
+
+    def test_mask_secrets(self):
+        for line, secret in [("peer 1.1.1.1 password cipher $c$3$abc==", "$c$3$abc=="),
+                             ("ospf authentication-mode simple plain MyS3cret", "MyS3cret"),
+                             ("authentication-mode md5 1 plain OspfPwd", "OspfPwd"),
+                             ("password hash $h$6$xyz", "$h$6$xyz")]:
+            self.assertNotIn(secret, P.mask(line), line)
+            self.assertIn("******", P.mask(line))
+
+    def test_static_route(self):
+        r = P.parse_static("ip route-static 10.201.0.0 255.255.0.0 Vlan-interface999 172.16.0.2 tag 100", "X")
+        self.assertEqual((r["dest"], r["out_if"], r["nh"], r["tag"]),
+                         ("10.201.0.0/16", "Vlan-interface999", "172.16.0.2", "100"))
+        r = P.parse_static("ip route-static vpn-instance A 0.0.0.0 0 192.168.255.2 description Def route", "X")
+        self.assertEqual((r["vrf"], r["dest"], r["nh"], r["desc"]), ("A", "0.0.0.0/0", "192.168.255.2", "Def route"))
+
+
+# --------------------------------------------------------------------------
+# Régression sur la config d'exemple
+# --------------------------------------------------------------------------
+@unittest.skipUnless(SAMPLE.exists(), "sample_hpe5940.cfg absent")
+class TestSample(TmpDirTest):
+    @classmethod
+    def setUpClass(cls):
+        cls.dir = Path(tempfile.mkdtemp(prefix="hpe5940_sample_"))
+        res = P.parse_config(SAMPLE)
+        cls.xlsx = cls.dir / "r.xlsx"
+        P.write_report([res], cls.xlsx)
+        cls.l2 = rows(cls.xlsx, "Interfaces L2")
+        cls.l3 = rows(cls.xlsx, "Interfaces L3")
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.dir, ignore_errors=True)
+
+    def test_sheets(self):
+        self.assertEqual(load_workbook(self.xlsx).sheetnames,
+                         ["Synthèse", "Interfaces L2", "Interfaces L3", "Routage dynamique",
+                          "Voisins BGP", "Routes statiques", "VLANs"])
+
+    def test_trunk(self):
+        r = by_name(self.l2, "Bridge-Aggregation1")
+        self.assertEqual((r["Mode"], r["VLANs autorisées (trunk)"], r["Nb VLANs trunk"]),
+                         ("trunk", "10,20,30-35,100", 9))           # undo permit vlan 1
+        self.assertEqual(r["Membres (agrégat)"], "Ten-GigabitEthernet1/0/1, Ten-GigabitEthernet1/0/2")
+
+    def test_member_inherits(self):
+        r = by_name(self.l2, "Ten-GigabitEthernet1/0/2")
+        self.assertEqual(r["Membre de l'agrégat"], "Bridge-Aggregation1")
+        self.assertEqual(r["VLANs autorisées (trunk)"], "10,20,30-35,100")
+        self.assertTrue(r["Config héritée"].startswith("oui"))
+
+    def test_access_hybrid_shutdown(self):
+        self.assertEqual(by_name(self.l2, "Ten-GigabitEthernet1/0/4")["VLAN access"], "10")
+        h = by_name(self.l2, "Ten-GigabitEthernet1/0/5")
+        self.assertEqual((h["Mode"], h["Hybrid tagged"], h["Hybrid untagged"], h["PVID"]),
+                         ("hybrid", "20", "10", "10"))
+        self.assertEqual(by_name(self.l2, "Ten-GigabitEthernet1/0/6")["Statut admin"], "shutdown")
+
+    def test_l3(self):
+        v10 = by_name(self.l3, "Vlan-interface10")
+        self.assertEqual((v10["Adresse IP"], v10["Masque"], v10["IP secondaires"]),
+                         ("10.10.10.1", "255.255.255.0", "10.10.11.1/24"))
+        self.assertEqual(v10["Serveurs DHCP relay"], "10.100.0.10, 10.100.0.11")
+        self.assertIn("10.10.10.254", v10["VRRP"])
+        self.assertEqual(by_name(self.l3, "Vlan-interface20")["IP MTU"], "1400")
+        self.assertEqual(by_name(self.l3, "Route-Aggregation10")["VRF"], "CLIENT-A")
+        self.assertEqual(by_name(self.l3, "HundredGigE1/0/53.100")["dot1q"], "100")
+        names = {r["Interface"] for r in self.l3} | {r["Interface"] for r in self.l2}
+        self.assertNotIn("NULL0", names)
+        self.assertIn("Ten-GigabitEthernet1/0/47", {r["Interface"] for r in self.l3})  # link-mode route
+
+    def test_routing(self):
+        rt = rows(self.xlsx, "Routage dynamique")
+        nets = {r["Valeur"] for r in rt if r["Catégorie"] == "Network" and r["Protocole"] == "OSPF"}
+        self.assertTrue({"10.255.0.1/32", "172.16.0.0/29", "10.10.10.0/24", "192.168.255.0/30"} <= nets)
+        self.assertTrue(any(r["Catégorie"] == "Type de zone" and r["Valeur"] == "stub" for r in rt))
+        bgp_rows = [r for r in rt if r["Protocole"] == "BGP"]
+        self.assertTrue(all(r["Router-ID"] == "10.255.0.1" for r in bgp_rows))
+
+    def test_bgp(self):
+        b = rows(self.xlsx, "Voisins BGP")
+        ibgp = by_name(b, "10.255.0.2", "Voisin / Groupe")
+        self.assertEqual((ibgp["Session"], ibgp["AS distant"], ibgp["Connect-interface"]),
+                         ("iBGP", "65001", "LoopBack0"))           # hérité du peer-group
+        isp = by_name(b, "203.0.113.1", "Voisin / Groupe")
+        self.assertEqual((isp["Session"], isp["Auth MD5"], isp["BFD"], isp["Route-policy import"]),
+                         ("eBGP", "oui", "oui", "RP-ISP-IN"))
+        self.assertEqual(by_name(b, "192.168.255.2", "Voisin / Groupe")["VRF"], "CLIENT-A")
+
+    def test_statics(self):
+        st = rows(self.xlsx, "Routes statiques")
+        self.assertEqual(len(st), 6)
+        self.assertEqual({r["VRF"] for r in st}, {"public", "CLIENT-A", "mgmt"})
+
+    def test_vlans_usage_no_members(self):
+        v10 = by_name(rows(self.xlsx, "VLANs"), 10, "VLAN")
+        self.assertNotIn("Ten-GigabitEthernet1/0/1", v10["Ports trunk/hybrid"])  # représenté par BAGG1
+        self.assertIn("Bridge-Aggregation1", v10["Ports trunk/hybrid"])
+
+    def test_no_secret_in_report(self):
+        for _, c in all_cells(self.xlsx):
+            self.assertNotIn("$c$3$", str(c.value or ""))
+
+
+# --------------------------------------------------------------------------
+# Cas limites
+# --------------------------------------------------------------------------
+EDGE = """<EDGE>display current-configuration
+#
+ sysname EDGE-SW
+#
+interface Ten-GigabitEthernet1/0/1
+ port link-mode bridge
+ description === UPLINK CORE ===
+ port access vlan 10
+#
+interface Ten-GigabitEthernet1/0/2
+ port link-mode bridge
+ description bell\x07char\x00
+#
+interface Vlan-interface50
+ ip address dhcp-alloc client-identifier mac Vlan-interface50
+ ospf authentication-mode simple plain MyS3cret
+#
+ospf 1
+ area 0.0.0.0
+  authentication-mode md5 1 plain OspfPwd
+#
+bgp 65001
+ router-id 9.9.9.9
+ ip vpn-instance A
+  peer 1.1.1.1 as-number 100
+ #
+ address-family ipv4 unicast
+  peer 2.2.2.2 enable
+ peer 2.2.2.2 as-number 200
+#
+return
+"""
+
+
+class TestEdgeCases(TmpDirTest):
+    def report(self, text, name="edge.cfg", encoding="utf-8"):
+        cfg = self.write_cfg(name, text, encoding)
+        res = P.parse_config(cfg)
+        out = self.tmp / "out.xlsx"
+        P.write_report([res], out)
+        return out
+
+    def test_control_chars_do_not_crash(self):
+        out = self.report(EDGE)
+        d = by_name(rows(out, "Interfaces L2"), "Ten-GigabitEthernet1/0/2")["Description"]
+        self.assertEqual(d, "bellchar")
+
+    def test_equal_sign_is_text_not_formula(self):
+        out = self.report(EDGE)
+        for _, c in all_cells(out):
+            self.assertNotEqual(c.data_type, "f", f"formule inattendue : {c.value}")
+        self.assertEqual(by_name(rows(out, "Interfaces L2"), "Ten-GigabitEthernet1/0/1")["Description"],
+                         "=== UPLINK CORE ===")
+
+    def test_dhcp_alloc(self):
+        r = by_name(rows(self.report(EDGE), "Interfaces L3"), "Vlan-interface50")
+        self.assertEqual(r["Adresse IP"], "dhcp-alloc client-identifier")
+        self.assertIn(r["Masque"], (None, ""))
+
+    def test_plain_passwords_masked(self):
+        out = self.report(EDGE)
+        for _, c in all_cells(out):
+            for secret in ("MyS3cret", "OspfPwd"):
+                self.assertNotIn(secret, str(c.value or ""))
+
+    def test_bgp_public_af_after_vrf(self):
+        b = rows(self.report(EDGE), "Voisins BGP")
+        p2 = by_name(b, "2.2.2.2", "Voisin / Groupe")
+        self.assertEqual((p2["VRF"], p2["AS distant"], p2["Session"]), ("public", "200", "eBGP"))
+        self.assertEqual(by_name(b, "1.1.1.1", "Voisin / Groupe")["VRF"], "A")
+
+    def test_encodings(self):
+        text = EDGE.replace("=== UPLINK CORE ===", "Imprimante étage")
+        for enc, name in (("utf-8-sig", "bom.cfg"), ("cp1252", "cp.cfg"), ("utf-16", "u16.cfg")):
+            out = self.report(text, name, enc)
+            d = by_name(rows(out, "Interfaces L2"), "Ten-GigabitEthernet1/0/1")["Description"]
+            self.assertEqual(d, "Imprimante étage", enc)
+
+    def test_more_prompt_and_crlf(self):
+        text = EDGE.replace("\n", "\r\n").replace(" port access vlan 10",
+                                                   "  ---- More ----\x1b[42D \x1b[42D port access vlan 10")
+        r = by_name(rows(self.report(text), "Interfaces L2"), "Ten-GigabitEthernet1/0/1")
+        self.assertEqual(r["VLAN access"], "10")
+
+    def test_empty_file(self):
+        out = self.report("")
+        self.assertTrue(out.exists())
+        self.assertEqual(rows(out, "Interfaces L2"), [])
+
+
+# --------------------------------------------------------------------------
+# Ligne de commande
+# --------------------------------------------------------------------------
+class TestCLI(TmpDirTest):
+    def test_default_output_next_to_config(self):
+        cfg = self.write_cfg("a.cfg", EDGE)
+        r = self.run_cli(cfg)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue((self.tmp / "EDGE-SW_rapport.xlsx").exists(), r.stdout)
+
+    def test_folder_glob_merge_and_duplicate_sysname(self):
+        self.write_cfg("a.cfg", EDGE)
+        self.write_cfg("b.txt", EDGE)                     # même sysname
+        self.write_cfg("ignore.xlsx", b"PK")              # extension non retenue
+        out = self.tmp / "rapports"
+        r = self.run_cli(self.tmp, str(self.tmp / "*.cfg"), "-d", out, "--merge", "tous.xlsx")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        produced = sorted(p.name for p in out.glob("*.xlsx"))
+        self.assertEqual(produced, ["EDGE-SW_b_rapport.xlsx", "EDGE-SW_rapport.xlsx", "tous.xlsx"],
+                         r.stdout + r.stderr)
+        self.assertIn("2 rapport(s)", r.stdout)            # a.cfg pas compté deux fois
+
+    def test_missing_file(self):
+        r = self.run_cli(self.tmp / "nope.cfg")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("introuvable", r.stderr)
+
+    def test_debug(self):
+        cfg = self.write_cfg("a.cfg", EDGE)
+        r = self.run_cli(cfg, "--debug")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("[DEBUG] Fichier", r.stdout)
+        self.assertIn("existe : True", r.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

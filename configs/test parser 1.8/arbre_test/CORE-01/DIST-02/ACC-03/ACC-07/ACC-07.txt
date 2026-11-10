@@ -1,0 +1,120 @@
+<ACC-07>display current-configuration
+#
+ version 7.1.070, Release 6710P01
+#
+ sysname ACC-07
+#
+ irf mac-address persistent timer
+#
+ router id 10.255.0.9
+#
+ lldp global enable
+#
+vlan 1
+#
+vlan 999
+ name MGMT
+#
+vlan 140
+ name USERS
+#
+vlan 150
+ name VOIP
+#
+vlan 160
+ name IMPRIMANTES
+#
+interface Bridge-Aggregation1
+ description UPLINK vers ACC-03 BAGG11
+ port link-type trunk
+ undo port trunk permit vlan 1
+ port trunk permit vlan 140 150 160 999
+ link-aggregation mode dynamic
+#
+interface NULL0
+#
+interface LoopBack0
+ description Router-ID
+ ip address 10.255.0.9 255.255.255.255
+#
+interface Vlan-interface999
+ description Management
+ ip address 172.20.0.6 255.255.0.0
+#
+interface M-GigabitEthernet0/0/0
+ ip address 192.168.0.10 255.255.0.0
+#
+interface Ten-GigabitEthernet1/0/1
+ port link-mode bridge
+ description PC bureau 122
+ port access vlan 140
+ stp edged-port
+#
+interface Ten-GigabitEthernet1/0/2
+ port link-mode bridge
+ description PC bureau 187
+ port access vlan 140
+ stp edged-port
+#
+interface Ten-GigabitEthernet1/0/3
+ port link-mode bridge
+ description PC bureau 202
+ port access vlan 140
+ stp edged-port
+#
+interface Ten-GigabitEthernet1/0/4
+ port link-mode bridge
+ description Imprimante etage 2
+ port access vlan 160
+ stp edged-port
+#
+interface Ten-GigabitEthernet1/0/5
+ port link-mode bridge
+ description Telephone + PC
+ port link-type hybrid
+ undo port hybrid vlan 1
+ port hybrid vlan 150 tagged
+ port hybrid vlan 140 untagged
+ port hybrid pvid vlan 140
+ stp edged-port
+#
+interface Ten-GigabitEthernet1/0/6
+ port link-mode bridge
+ description PC bureau 249
+ port access vlan 140
+ stp edged-port
+#
+interface Ten-GigabitEthernet1/0/7
+ port link-mode bridge
+ description Libre
+ shutdown
+#
+interface Ten-GigabitEthernet1/0/8
+ port link-mode bridge
+ description Telephone + PC
+ port link-type hybrid
+ undo port hybrid vlan 1
+ port hybrid vlan 150 tagged
+ port hybrid vlan 140 untagged
+ port hybrid pvid vlan 140
+ stp edged-port
+#
+interface HundredGigE1/0/53
+ port link-mode bridge
+ description UPLINK vers ACC-03 Ten-GigabitEthernet1/0/1
+ port link-type trunk
+ undo port trunk permit vlan 1
+ port trunk permit vlan 140 150 160 999
+ port link-aggregation group 1
+#
+interface HundredGigE1/0/54
+ port link-mode bridge
+ description UPLINK vers ACC-03 Ten-GigabitEthernet1/0/2
+ port link-type trunk
+ undo port trunk permit vlan 1
+ port trunk permit vlan 140 150 160 999
+ port link-aggregation group 1
+#
+ ip route-static 0.0.0.0 0 192.168.0.1 description Defaut management
+#
+return
